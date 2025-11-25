@@ -362,7 +362,7 @@ app.get('/', (req, res) => {
     message: '🏦 Welcome to Banking API',
     version: '1.0.0',
     endpoints: {
-      health: '/health',
+      health: '/api/health',
       api: '/api'
     }
   });
@@ -854,7 +854,7 @@ banking-phpmyadmin    Up 30 seconds       0.0.0.0:8080->80/tcp
 
 #### 1. Health Check
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:3000/api/health
 ```
 
 Expected response:

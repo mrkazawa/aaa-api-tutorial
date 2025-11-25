@@ -456,7 +456,7 @@ app.get('/', (req, res) => {
     message: '🏦 Welcome to Banking API',
     version: '1.0.0',
     endpoints: {
-      health: '/health',
+      health: '/api/health',
       api: '/api',
       login: '/login.html'
     }

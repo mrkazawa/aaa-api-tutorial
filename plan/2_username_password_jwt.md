@@ -483,6 +483,19 @@ exports.verifyCredentials = async (username, password) => {
 };
 
 /**
+ * Verify password against hash
+ * @param {string} password - Plain text password
+ * @param {string} hash - Password hash
+ * @returns {Promise<boolean>} - True if password matches
+ */
+exports.verifyPassword = async (password, hash) => {
+  if (!hash) {
+    return false;
+  }
+  return await comparePassword(password, hash);
+};
+
+/**
  * Log login attempt
  * @param {string} username - Username
  * @param {string} ipAddress - IP address
@@ -647,7 +660,18 @@ exports.login = async (req, res) => {
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.get('user-agent') || 'unknown';
     
-    // Check if account is locked
+    // Step 1: Check if user exists
+    const user = await authService.findUserByUsername(username);
+    
+    if (!user) {
+      // Don't reveal that user doesn't exist - use generic error
+      await authService.logLoginAttempt(username, ipAddress, userAgent, false, 'user_not_found');
+      return res.status(401).json({
+        error: 'Invalid username or password'
+      });
+    }
+    
+    // Step 2: Check if account is locked
     const isLocked = await authService.isAccountLocked(username);
     if (isLocked) {
       await authService.logLoginAttempt(username, ipAddress, userAgent, false, 'account_locked');
@@ -657,28 +681,25 @@ exports.login = async (req, res) => {
       });
     }
     
-    // Verify credentials
-    const user = await authService.verifyCredentials(username, password);
+    // Step 3: Verify password
+    const isValidPassword = await authService.verifyPassword(password, user.password_hash);
     
-    if (!user) {
+    if (!isValidPassword) {
       // Log failed attempt
-      await authService.logLoginAttempt(username, ipAddress, userAgent, false, 'invalid_credentials');
+      await authService.logLoginAttempt(username, ipAddress, userAgent, false, 'invalid_password');
       
       // Check if should lock account
       const failedAttempts = await authService.getRecentFailedAttempts(username, 15);
       
       if (failedAttempts >= parseInt(process.env.MAX_LOGIN_ATTEMPTS || 3)) {
         // Lock the account
-        const tempUser = await authService.findUserByUsername(username);
-        if (tempUser) {
-          await authService.lockAccount(tempUser.id);
-          console.log(`🔒 Account locked: ${username} (${failedAttempts} failed attempts)`);
-          
-          return res.status(423).json({
-            error: 'Account locked due to multiple failed login attempts',
-            message: `Your account has been locked for ${process.env.ACCOUNT_LOCKOUT_DURATION_MINUTES || 15} minutes`
-          });
-        }
+        await authService.lockAccount(user.id);
+        console.log(`🔒 Account locked: ${username} (${failedAttempts} failed attempts)`);
+        
+        return res.status(423).json({
+          error: 'Account locked due to multiple failed login attempts',
+          message: `Your account has been locked for ${process.env.ACCOUNT_LOCKOUT_DURATION_MINUTES || 15} minutes`
+        });
       }
       
       return res.status(401).json({
@@ -687,7 +708,7 @@ exports.login = async (req, res) => {
       });
     }
     
-    // Success - log it
+    // Step 4: Success - log it
     await authService.logLoginAttempt(username, ipAddress, userAgent, true);
     await authService.updateLastLogin(user.id);
     
